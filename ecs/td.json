@@ -1,0 +1,40 @@
+{
+    "family": "green",
+    "networkMode": "bridge",
+    "containerDefinitions": [
+        {
+            "name": "greenapp",
+            "image": "farhan1281/demo:latest",
+            "cpu": 256,
+            "memory": 512,
+            "essential": true,
+            "portMappings": [
+                {
+                    "containerPort": 5003,
+                    "hostPort": 5003,
+                    "protocol": "tcp"
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/greenapp",
+                    "awslogs-create-group": "true",
+                    "awslogs-region": "ca-central-1",
+                    "awslogs-stream-prefix": "ecs"
+                }
+            }
+        }
+    ],
+    "taskRoleArn": "arn:aws:iam::541804384520:role/ecsTaskExecutionRole",
+    "executionRoleArn": "arn:aws:iam::541804384520:role/ecsTaskExecutionRole",
+    "requiresCompatibilities": [
+        "EXTERNAL"
+    ],
+    "cpu": "256",
+    "memory": "512",
+    "runtimePlatform": {
+        "cpuArchitecture": "X86_64",
+        "operatingSystemFamily": "LINUX"
+    }
+}

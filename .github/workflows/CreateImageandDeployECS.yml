@@ -1,0 +1,83 @@
+name: Build Docker Image (Local) and Deploy to ECS
+
+on: workflow_dispatch
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  ecs-service-update:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # --- NEW STEP: Load Configuration from File ---
+      # This reads project.env and makes the variables available to all steps below
+      - name: Load Project Configuration
+        run: cat project.env >> $GITHUB_ENV
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.IAM_ROLE }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Build and Load Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true 
+          push: false
+          # Uses the IMAGE_REPO variable loaded from the file
+          tags: |
+            ${{ env.IMAGE_REPO }}:latest
+            ${{ env.IMAGE_REPO }}:${{ github.sha }}
+
+      - name: Render Amazon ECS task definition
+        id: render-td
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ecs/td.json
+          container-name: demoapp
+          # Uses the IMAGE_REPO variable loaded from the file
+          image: ${{ env.IMAGE_REPO }}:${{ github.sha }}
+
+      - name: Ensure ECS Service exists
+        run: |
+          # The variables $CLUSTER_NAME and $SERVICE_NAME are automatically 
+          # available here because we loaded them into GITHUB_ENV in step 2.
+          
+          echo "Checking status for Service: $SERVICE_NAME in Cluster: $CLUSTER_NAME"
+
+          STATUS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query "services[0].status" --output text)
+          
+          if [ "$STATUS" != "ACTIVE" ]; then
+            echo "Service '$SERVICE_NAME' not found. Creating it now..."
+            
+            TD_ARN=$(aws ecs register-task-definition --cli-input-json file://${{ steps.render-td.outputs.task-definition }} --query "taskDefinition.taskDefinitionArn" --output text)
+            
+            aws ecs create-service \
+              --cluster $CLUSTER_NAME \
+              --service-name $SERVICE_NAME \
+              --task-definition $TD_ARN \
+              --desired-count 1 \
+              --launch-type EXTERNAL \
+              --deployment-configuration "maximumPercent=100,minimumHealthyPercent=0"
+          else
+            echo "Service '$SERVICE_NAME' already exists. Ready for deployment."
+          fi
+
+      - name: Deploy to Amazon ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-td.outputs.task-definition }}
+          service: ${{ env.SERVICE_NAME }}
+          cluster: ${{ env.CLUSTER_NAME }}
+          wait-for-service-stability: true
+          force-new-deployment: true
+
+      - name: Cleanup Junk Images
+        if: always()
+        run: docker system prune -f
