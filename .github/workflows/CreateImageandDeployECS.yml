@@ -40,7 +40,7 @@ jobs:
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: ecs/td.json
-          container-name: demoapp
+          container-name: ${{ env.CONTAINER_NAME }}
           # Uses the IMAGE_REPO variable loaded from the file
           image: ${{ env.IMAGE_REPO }}:${{ github.sha }}
 
